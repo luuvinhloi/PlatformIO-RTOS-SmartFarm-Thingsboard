@@ -1,0 +1,87 @@
+// void InitWiFi() {
+//   Serial.println("Connecting to AP ...");
+//   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+//   while (WiFi.status() != WL_CONNECTED) {
+//     delay(500);
+//     Serial.print(".");
+//   }
+//   Serial.println("Connected to AP");
+// }
+
+// const bool reconnect() {
+//   // Check to ensure we aren't connected yet
+//   const wl_status_t status = WiFi.status();
+//   if (status == WL_CONNECTED) {
+//     return true;
+//   }
+//   // If we aren't establish a new connection to the given WiFi network
+//   InitWiFi();
+//   return true;
+// }
+
+// void setup() {
+//   Serial.begin(SERIAL_DEBUG_BAUD);
+//   pinMode(LED_PIN, OUTPUT);
+//   dht.begin();
+//   InitWiFi();
+// }
+
+// void loop() {
+//   delay(10);
+//   if (!reconnect()) return;
+
+//   if (!tb.connected()) {
+//     Serial.println("Connecting to ThingsBoard...");
+//     if (!tb.connect(THINGSBOARD_SERVER, TOKEN, THINGSBOARD_PORT)) {
+//       Serial.println("Failed to connect");
+//       return;
+//     }
+//     tb.sendAttributeData("macAddress", WiFi.macAddress().c_str());
+//     tb.RPC_Subscribe(callbacks.cbegin(), callbacks.cend());
+//   }
+
+//   if (attributesChanged) {
+//     attributesChanged = false;
+//     tb.sendAttributeData("ledState", digitalRead(LED_PIN));
+//   }
+
+//   if (millis() - previousDataSend > telemetrySendInterval) {
+//     previousDataSend = millis();
+
+//     // Đọc cảm biến DHT11 (nhiệt độ, độ ẩm không khí)
+//     float temperature = dht.readTemperature();
+//     float humidity = dht.readHumidity();
+
+//     // Đọc cảm biến độ ẩm đất
+//     int soilMoistureRaw = analogRead(SOIL_MOISTURE_PIN);
+//     float soilMoisturePercent = map(soilMoistureRaw, 4095, 0, 0, 100);  // Chuyển đổi sang %
+
+//     Serial.print("Temperature: ");
+//     Serial.print(temperature);
+//     Serial.print(" °C, Humidity: ");
+//     Serial.print(humidity);
+//     Serial.print(" %, Soil Moisture: ");
+//     Serial.print(soilMoisturePercent);
+//     Serial.println(" %");
+
+//     // Gửi dữ liệu lên ThingsBoard
+//     if (!isnan(temperature) && !isnan(humidity)) {
+//       tb.sendTelemetryData("temperature", temperature);
+//       tb.sendTelemetryData("humidity", humidity);
+//     }
+//     tb.sendTelemetryData("soil_moisture", soilMoisturePercent);
+    
+//     // Gửi dữ liệu GPS lên ThingsBoard
+//     tb.sendTelemetryData("lat", latitude);
+//     tb.sendTelemetryData("long", longitude);
+
+//     Serial.print("Sent GPS Data: Latitude: ");
+//     Serial.print(latitude);
+//     Serial.print(", Longitude: ");
+//     Serial.println(longitude);
+//   }
+
+//   tb.loop();
+// }
+
+// RTOS MODELS
