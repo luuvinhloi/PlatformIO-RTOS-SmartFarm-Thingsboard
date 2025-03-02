@@ -27,7 +27,7 @@ constexpr char WIFI_PASSWORD[] = "Tiger@E1112";
 
 
 // Cấu hình ThingsBoard
-constexpr char TOKEN[] = "snd4dtdskqneltfh76yk";
+constexpr char TOKEN[] = "14l4hG8NU4QXotadl8J4";
 constexpr char THINGSBOARD_SERVER[] = "app.coreiot.io";
 constexpr uint16_t THINGSBOARD_PORT = 1883U;
 
@@ -108,12 +108,12 @@ void WiFiTask(void *pvParameters) {
             Serial.println("Connecting to WiFi...");
             WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
             while (WiFi.status() != WL_CONNECTED) {
-                vTaskDelay(300 / portTICK_PERIOD_MS);
+                vTaskDelay(500 / portTICK_PERIOD_MS);
                 Serial.print(".");
             }
             Serial.println("Connected to WiFi");
         }
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        vTaskDelay(3000 / portTICK_PERIOD_MS);
     }
 }
 

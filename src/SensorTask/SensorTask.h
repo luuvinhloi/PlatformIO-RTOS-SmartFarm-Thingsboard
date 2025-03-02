@@ -24,6 +24,10 @@ extern uint32_t previousDataSend;
 extern DHT dht;
 
 
+extern QueueHandle_t soilMoistureQueue;  // Hàng đợi để truyền dữ liệu
+void updateSoilMoisture();
+
+
 // Prototype các task của FreeRTOS
 void SensorTask(void *pvParameters);
 

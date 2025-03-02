@@ -5,8 +5,8 @@
 
 // API Key từ OpenWeatherMap
 const char* apiKey = "8b579de0fc93996bc8c50ccb1a5795ec";    // API Key OPENWeather DỰ BÁO MƯA
-const char* lat = "10.898576";   // Thay bằng tọa độ của bạn
-const char* lon = "106.794645";  // Thay bằng tọa độ của bạn
+const char* lat = "10.898576"; 
+const char* lon = "106.794645";
 
 
 bool checkRainNext12Hours() {
@@ -18,7 +18,7 @@ bool checkRainNext12Hours() {
 
     if (httpResponseCode > 0) {
         String response = http.getString();
-        Serial.println(response);
+        // Serial.println(response);
 
         // Phân tích JSON
         DynamicJsonDocument doc(10240);
@@ -29,7 +29,6 @@ bool checkRainNext12Hours() {
         for (int i = 0; i < 4; i++) {  // Kiểm tra 12 giờ tới (mỗi entry = 3 giờ)
             float rain = list[i]["rain"]["3h"] | 0;  
             if (rain > 0) {
-                Serial.println("Có mưa trong 12 giờ tới!");
                 return true;
             }
         }

@@ -8,7 +8,7 @@
 
 // Định nghĩa chân kết nối
 #define LED_PIN 2 // Chân kết nối LED
-#define LED_BUTTON_PIN 33 // Button LED
+#define LED_BUTTON_PIN 4 // Button LED
 
 
 // Các thuộc tính ThingsBoard

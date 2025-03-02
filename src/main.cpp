@@ -1,10 +1,12 @@
 #include <Arduino.h>
+#include <time.h>
 #include "ConnectTask/ConnectTask.h"
 #include "LEDTask/LEDTask.h"
 #include "PumpTask/PumpTask.h"
 #include "SensorTask/SensorTask.h"
 #include "LCDTask/LCDTask.h"
 #include "SendMessageTask/SendMessageTask.h"
+#include "WeatherTask/WeatherTask.h"
 
 
 // Các hằng số cấu hình
@@ -39,8 +41,35 @@ void setup() {
 
   dht.begin();
 
-  // Khởi tạo LCD
   Wire.begin(SDA_PIN, SCL_PIN);
+
+  // **Khởi tạo RTC**
+  if (!rtc.begin()) {
+    Serial.println("Không tìm thấy RTC, kiểm tra kết nối!");
+    while (1); // Dừng chương trình nếu RTC không hoạt động
+  }
+
+  char buffer[20];  // Khai báo biến buffer
+
+  if (rtc.lostPower()) {
+    // Serial.println("RTC mất nguồn, đặt lại thời gian!");
+    // rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // Cập nhật theo thời gian biên dịch
+
+    Serial.println("RTC mất nguồn, nhập thời gian thực theo định dạng YYYY MM DD HH MM SS:");
+    while (!Serial.available());  // Chờ người dùng nhập thời gian
+
+    int year, month, day, hour, minute, second;
+    Serial.readStringUntil('\n').toCharArray(buffer, 20); // Đọc dữ liệu nhập vào
+    sscanf(buffer, "%d %d %d %d %d %d", &year, &month, &day, &hour, &minute, &second);
+    
+    rtc.adjust(DateTime(year, month, day, hour, minute, second));
+    Serial.println("Đã cập nhật thời gian RTC!");
+  }
+
+  Serial.println("RTC đã được khởi tạo thành công!");
+
+
+  // Khởi tạo LCD
   lcd.init();
   lcd.backlight();  // Bật đèn nền
   lcd.setCursor(0, 0);
@@ -48,11 +77,12 @@ void setup() {
   lcd.setCursor(0, 1);
   lcd.print("Starting...");
 
+
   // Khởi tạo các task của FreeRTOS
   xTaskCreate(WiFiTask, "WiFiTask", 4096, NULL, 1, NULL);
   xTaskCreate(ThingsBoardTask, "ThingsBoardTask", 4096, NULL, 1, NULL);
-  xTaskCreate(SensorTask, "SensorTask", 4096, NULL, 1, NULL);
   xTaskCreate(ReconnectTask, "ReconnectTask", 4096, NULL, 1, NULL);
+  xTaskCreate(SensorTask, "SensorTask", 4096, NULL, 1, NULL);
   xTaskCreate(TaskButtonLEDControl, "TaskButtonLEDControl", 4096, NULL, 1, NULL);
   xTaskCreate(TaskSendLEDState, "TaskSendLEDState", 2048, NULL, 1, NULL);
   xTaskCreate(TaskPumpControl, "TaskPumpControl", 4096, NULL, 1, NULL);

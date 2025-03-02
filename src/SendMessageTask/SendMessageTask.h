@@ -5,6 +5,7 @@
 #include <Arduino.h>
 #include <ArduinoOTA.h>
 #include <HTTPClient.h>
+#include <vector>
 
 
 // Telegram Bot
@@ -13,7 +14,9 @@
 
 
 // Các hằng số cấu hình
-constexpr uint32_t alertInterval = 600000; // 10 phút (600.000 milliseconds)
+constexpr uint32_t alertInterval = 10000; // 10 giây (10.000 milliseconds)
+// constexpr uint32_t alertInterval = 600000; // 10 phút (600.000 milliseconds)
+
 
 
 // Lưu thời điểm gửi dữ liệu và kiểm tra kết nối

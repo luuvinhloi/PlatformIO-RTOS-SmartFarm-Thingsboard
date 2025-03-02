@@ -9,6 +9,9 @@
 // Lưu thời điểm gửi dữ liệu và kiểm tra kết nối
 uint32_t lastAlertTime = 0;
 
+// Biến lưu trạng thái dự báo mưa trước đó
+bool lastRainExpected = true;
+
 
 // Gửi tin nhắn cảnh báo qua Telegram
 void sendTelegramMessage(String message, String imageUrl) {
@@ -31,54 +34,45 @@ void sendTelegramMessage(String message, String imageUrl) {
 }
 
 
+void appendAlertMessage(String &message, const String &text, bool &alertSent) {
+    message += text + " %0A";
+    alertSent = true;
+}
+
+
 void checkAndSendAlerts(float humidity, float temperature, float soilMoisturePercent) {
     uint32_t currentMillis = millis();
+    if (currentMillis - lastAlertTime < alertInterval) return; // Chỉ gửi cảnh báo sau mỗi 10 phút
 
-    String ImageURL = "http://rangdong.com.vn/uploads/news/tin-san-pham/nguoi-ban-4.0-cua-nha-nong/smart-farm-rang-dong-nguoi-ban-4.0-cua-nha-nong-5.jpg";
+    bool rainExpected = checkRainNext12Hours();
+    bool alertSent = false;
+    String alertMessage = "🚨 **Cảnh báo Smart Farm** 🚨 %0A";
+    String imageURL = "http://rangdong.com.vn/uploads/news/tin-san-pham/nguoi-ban-4.0-cua-nha-nong/smart-farm-rang-dong-nguoi-ban-4.0-cua-nha-nong-5.jpg";
 
-    // Chỉ gửi cảnh báo nếu đã đủ 10 phút kể từ lần gửi trước
-    if (currentMillis - lastAlertTime >= alertInterval) {
-        bool alertSent = false;
+    // Danh sách điều kiện cảnh báo
+    std::vector<std::pair<String, bool>> conditions = {
+        {"🌫 Độ ẩm quá thấp! (📉 " + String(humidity) + "%)", humidity < 30},
+        {"🌫 Độ ẩm quá cao! (📈 " + String(humidity) + "%)", humidity > 80},
+        {"🌡️ Nhiệt độ quá thấp! (" + String(temperature) + "°C)", temperature < 20},
+        {"🌡️ Nhiệt độ quá cao! (" + String(temperature) + "°C)", temperature > 35},
+        {"🌱 Độ ẩm đất thấp! (💧 " + String(soilMoisturePercent) + "%)", soilMoisturePercent < 60},
+        {"🌱 Độ ẩm đất cao! (💧 " + String(soilMoisturePercent) + "%)", soilMoisturePercent > 80}
+    };
 
-        String alertMessage = "🚨 **Cảnh báo Smart Farm** 🚨 %0A";
-        // Gửi cảnh báo Độ ẩm qua Telegram
-        if (humidity < 30) {
-            alertMessage += "🌫 Độ ẩm quá thấp! (📉 " + String(humidity) + "%) %0A";
-            alertSent = true;
-        }  else if (humidity > 80) {
-            alertMessage += "🌫 Độ ẩm quá cao! (📈 " + String(humidity) + "%) %0A";
-            alertSent = true;
-        }
-        // Gửi cảnh báo Nhiệt độ qua Telegram
-        if (temperature < 20) {
-            alertMessage += "🌡️ Nhiệt độ quá thấp! (" + String(temperature) + "°C) %0A";
-            alertSent = true;
-        } else if (temperature > 35) {
-            alertMessage += "🌡️ Nhiệt độ quá cao! (" + String(temperature) + "°C) %0A";
-            alertSent = true;
-        }
-        // Gửi cảnh báo Độ ẩm đất qua Telegram
-        if (soilMoisturePercent < 60) {
-            alertMessage += "🌱 Độ ẩm đất thấp! (💧 " + String(soilMoisturePercent) + "%) %0A";
-            alertSent = true;
-        } else if (soilMoisturePercent > 80) {
-            alertMessage += "🌱 Độ ẩm đất cao! (💧 " + String(soilMoisturePercent) + "%) %0A";
-            alertSent = true;
-        }
-        // Gửi cảnh báo Mưa qua Telegram
-        if (!checkRainNext12Hours()) {
-            alertMessage += "Không có Mưa trong 12 giờ tới => Máy Bơm sẽ được BẬT!%0A";
-            alertSent = true;
-        } else {
-            alertMessage += "Có Mưa trong 12 giờ tới => Máy Bơm sẽ được KHÔNG BẬT!%0A";
-            alertSent = true;
-        }
-
-        sendTelegramMessage(alertMessage, ImageURL);
-
-        // Nếu có cảnh báo được gửi, cập nhật lại thời gian gửi cuối cùng
-        if (alertSent) {
-            lastAlertTime = currentMillis;
-        }
+    // Duyệt qua danh sách điều kiện và thêm thông báo nếu cần
+    for (const auto &condition : conditions) {
+        if (condition.second) appendAlertMessage(alertMessage, condition.first, alertSent);
     }
-}  
+
+    // Kiểm tra thay đổi trạng thái mưa
+    if (rainExpected != lastRainExpected) {
+        appendAlertMessage(alertMessage, rainExpected ? "🌧 Dự báo Có Mưa trong 12 giờ tới => Máy Bơm sẽ KHÔNG BẬT!" : "🌤 Dự báo Không có Mưa trong 12 giờ tới => Máy Bơm sẽ được BẬT TỰ ĐỘNG!", alertSent);
+        lastRainExpected = rainExpected;
+    }
+
+    // Gửi cảnh báo nếu có bất kỳ điều kiện nào đúng
+    if (alertSent) {
+        sendTelegramMessage(alertMessage, imageURL);
+        lastAlertTime = currentMillis;
+    }
+}
