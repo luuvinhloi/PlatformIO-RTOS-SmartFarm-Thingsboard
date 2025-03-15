@@ -1,16 +1,15 @@
-#include "LEDTask/LEDTask.h"
-#include "PumpTask/PumpTask.h"
-#include "SensorTask/SensorTask.h"
-#include "ConnectTask/ConnectTask.h"
-#include "WeatherTask/WeatherTask.h"
 #include "SendMessageTask.h"
-
+#include "SensorTask/SensorTask.h"
+#include "WeatherTask/WeatherTask.h"
 
 // Lưu thời điểm gửi dữ liệu và kiểm tra kết nối
 uint32_t lastAlertTime = 0;
-
 // Biến lưu trạng thái dự báo mưa trước đó
 bool lastRainExpected = true;
+// Biến lưu trạng thái mưa
+bool lastRainState = true;
+// Biến lưu trạng thái máy bơm trước đó để tránh gửi thông báo trùng lặp
+bool lastPumpState = false;
 
 
 // Gửi tin nhắn cảnh báo qua Telegram
@@ -24,9 +23,7 @@ void sendTelegramMessage(String message, String imageUrl) {
     http.begin(url);
     int httpResponseCode = http.GET();
 
-    if (httpResponseCode > 0) {
-        Serial.println("Gửi tin nhắn Telegram thành công!");
-    } else {
+    if (httpResponseCode < 0) {
         Serial.print("Lỗi gửi tin nhắn Telegram");
         Serial.println(httpResponseCode);
     }
@@ -70,9 +67,33 @@ void checkAndSendAlerts(float humidity, float temperature, float soilMoisturePer
         lastRainExpected = rainExpected;
     }
 
+    // bool isRaining = digitalRead(RAIN_SENSOR_PIN) == LOW; // LOW nghĩa là có mưa
+    // if (isRaining != lastRainState) {
+    //     appendAlertMessage(alertMessage, isRaining ? "🌧 Phát hiện Có Mưa! Máy Bơm sẽ TẮT!" : "🌤 Không còn Mưa! Máy Bơm sẽ BẬT!", alertSent);
+    //     lastRainState = isRaining;
+    // }
+
     // Gửi cảnh báo nếu có bất kỳ điều kiện nào đúng
     if (alertSent) {
         sendTelegramMessage(alertMessage, imageURL);
         lastAlertTime = currentMillis;
     }
+}
+
+void checkAndSendAlertsPump(float soilMoisturePercent, bool pumpState) {
+    uint32_t currentMillis = millis();
+    if (currentMillis - lastAlertTime < alertInterval) return; // Chỉ gửi cảnh báo sau mỗi 10 phút
+
+    bool alertSent = false;
+    String alertMessage = "🚨 **Cảnh báo Smart Farm** 🚨 %0A";
+    String imageURL = "http://rangdong.com.vn/uploads/news/tin-san-pham/nguoi-ban-4.0-cua-nha-nong/smart-farm-rang-dong-nguoi-ban-4.0-cua-nha-nong-5.jpg";
+
+    if ((soilMoisturePercent < 60) && (pumpState && !lastPumpState)) {
+        appendAlertMessage(alertMessage, "🔔 Cảnh báo: Máy bơm đã được BẬT do độ ẩm đất thấp!", alertSent);
+    } else if ((soilMoisturePercent > 80) && (!pumpState && lastPumpState)) {
+        appendAlertMessage(alertMessage, "🔔 Cảnh báo: Máy bơm đã được TẮT do độ ẩm đất đạt mức cho phép!", alertSent);
+    }    
+
+    // Cập nhật trạng thái trước đó
+    lastPumpState = pumpState;
 }

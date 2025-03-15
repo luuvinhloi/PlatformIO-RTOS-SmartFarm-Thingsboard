@@ -1,7 +1,5 @@
 #include "WeatherTask.h"
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <ArduinoJson.h>
+
 
 // API Key từ OpenWeatherMap
 const char* apiKey = "8b579de0fc93996bc8c50ccb1a5795ec";    // API Key OPENWeather DỰ BÁO MƯA

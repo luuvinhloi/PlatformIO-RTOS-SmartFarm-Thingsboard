@@ -1,10 +1,9 @@
+#include "PumpTask.h"
 #include "ConnectTask/ConnectTask.h"
 #include "LEDTask/LEDTask.h"
 #include "SensorTask/SensorTask.h"
 #include "SendMessageTask/SendMessageTask.h"
 #include "WeatherTask/WeatherTask.h"
-#include "PumpTask.h"
-
 
 #define SOIL_MOISTURE_THRESHOLD_LOW 60  // Ngưỡng dưới độ ẩm đất (%)
 #define SOIL_MOISTURE_THRESHOLD_HIGH 80 // Ngưỡng trên độ ẩm đất (%)
@@ -12,95 +11,122 @@
 // Các biến trạng thái
 bool isAutoMode = true;     // Auto Mode
 bool pumpState = false;     // Trạng thái của Pump
-// bool lastPumpState = false;
+static int lastPumpState = 0;   // Biến lưu trạng thái cũ
+volatile bool attributesChangedPump = false;
 
 // Biến toàn cục
 RTC_DS3231 rtc;
 
-// Hàm bật/tắt máy bơm
-void turnOnOffPump(int onOff) {
-    digitalWrite(RELAY_PIN, onOff);
+// Cập nhật trạng thái LED lên Dashboard
+void updateDashboardPumpState() {
+    if (tb.connected()) {
+        tb.sendAttributeData("getValueButtonPump", pumpState);
+        attributesChangedPump = false;  // Reset trạng thái thay đổi
+    }
 }
 
-// Task điều khiển Pump auto mode
-static int lastPumpState = 0; // Biến lưu trạng thái cũ
+// Xử lý RPC từ Dashboard để thay đổi Pump
+RPC_Response setPumpState(const RPC_Data &data) {
+    bool newState = data; // Nhận trạng thái mong muốn từ Dashboard
 
-// void TaskPumpControl(void *pvParameters) {
-//     for (;;) {
-//         if (isAutoMode) {
-//             if (pumpState == 0) {
-//                 turnOnOffPump(1);
-//                 pumpState = 1;
-//                 Serial.println("Máy bơm (Auto): Đang bật!");
-//                 tb.sendAttributeData("getValueButtonPump", pumpState);
-//                 vTaskDelay(10000 / portTICK_PERIOD_MS);
-//             } else if (pumpState == 1) {
-//                 turnOnOffPump(0);
-//                 pumpState = 0;
-//                 Serial.println("Máy bơm (Auto): Đang tắt!");
-//                 tb.sendAttributeData("getValueButtonPump", pumpState);
-//                 vTaskDelay(5000 / portTICK_PERIOD_MS);
-//             }
-//         } else {
-//             vTaskDelay(50 / portTICK_PERIOD_MS);
-//         }
-//     }
-// }
+    isAutoMode = !newState;
+    pumpState = newState;
 
+    // Cập nhật trạng thái bơm và relay
+    digitalWrite(RELAY_PIN, pumpState);
 
-// Task điều khiển Pump Auto Mode
-void TaskPumpControl(void *pvParameters) {
-	float soilMoisture;
+    Serial.printf("Dashboard yêu cầu: %s MÁY BƠM!\n", pumpState ? "BẬT" : "TẮT");
+    Serial.println(isAutoMode ? "Máy Bơm ở Auto Mode!" : "Máy Bơm ở Manual Mode!");
 
-    for(;;) {
+    attributesChangedPump = true;
+
+    // Gửi trạng thái mới lên ThingsBoard để đồng bộ
+    return RPC_Response("setValueButtonPump", pumpState);
+}
+
+// RPC để Dashboard lấy trạng thái Pump
+RPC_Response getPumpState(const RPC_Data &data) {
+    return RPC_Response("getValueButtonPump", pumpState);
+}
+
+// Task 1: Theo dõi cảm biến mưa
+void TaskRainSensorMonitor(void *pvParameters) {
+    for (;;) {
+        // bool isRaining = digitalRead(RAIN_SENSOR_PIN) == LOW; // LOW nghĩa là có mưa
+        bool isRaining = 0; // LOW nghĩa là có mưa
+        if (isRaining && pumpState) {
+            Serial.println("Phát hiện có mưa! Tắt máy bơm.");
+            pumpState = false;
+            digitalWrite(RELAY_PIN, pumpState);
+            updateDashboardPumpState();
+        }
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+}
+
+// Task 2: Điều khiển bơm theo lịch tưới hằng ngày
+void TaskSchedulePump(void *pvParameters) {
+    for (;;) {
         DateTime now = rtc.now();  // Lấy thời gian hiện tại
-
-        // In thời gian hiện tại ra Serial
-        Serial.print("Thời gian hiện tại: ");
-        Serial.print(now.hour());
-        Serial.print(":");
-        Serial.println(now.minute());
-
         bool rainExpected = checkRainNext12Hours();
+        // Kiểm tra cảm biến mưa
+        // bool isRaining = digitalRead(RAIN_SENSOR_PIN) == LOW; // LOW nghĩa là có mưa
+        bool isRaining = 0; // LOW nghĩa là có mưa
 
-        // Ưu tiên 1: Kiểm tra độ ẩm đất
-        if (xQueueReceive(soilMoistureQueue, &soilMoisture, portMAX_DELAY) == pdTRUE) {
-            if (soilMoisture < SOIL_MOISTURE_THRESHOLD_LOW) {
-                Serial.printf("Soil Moisture: %.2f%%\n", soilMoisture);
-                Serial.println("Độ ẩm đất thấp, BẬT máy bơm!");
-                turnOnOffPump(1);
+        if (!rainExpected && !isRaining) {  // Nếu không có mưa dự báo hoặc hiện tại không có mưa
+            if ((now.hour() == 8 && now.minute() == 30) && !pumpState) {
+                Serial.printf("Thời gian hiện tại: %02d:%02d\n", now.hour(), now.minute());
+                Serial.println("BẬT máy bơm theo lịch tưới hằng ngày.");
                 pumpState = true;
-            } else if (soilMoisture > SOIL_MOISTURE_THRESHOLD_HIGH) {
-                Serial.printf("Soil Moisture: %.2f%%\n", soilMoisture);
-                Serial.println("Độ ẩm đất đạt mức yêu cầu, TẮT máy bơm!");
-                turnOnOffPump(0);
+            } else if ((now.hour() == 9 && now.minute() == 45) && pumpState) {
+                Serial.printf("Thời gian hiện tại: %02d:%02d\n", now.hour(), now.minute());
+                Serial.println("TẮT máy bơm theo lịch tưới hằng ngày.");
                 pumpState = false;
             }
-        }
-        
-        // Ưu tiên 2: Tưới nước theo lịch hằng ngày từ 8h - 9h30, trừ khi có mưa
-        if ((now.hour() >= 9 && now.minute() >= 10) && !pumpState) {
-            Serial.println("Bật máy bơm theo lịch tưới hằng ngày.");
-            turnOnOffPump(1);
-            pumpState = true;
-        } else if ((now.hour() >= 9 && now.minute() >= 15) && !pumpState) {
-            Serial.println("Tắt máy bơm theo lịch hằng ngày.");
-            turnOnOffPump(0);
-            pumpState = false;
-        }
 
-        // Gửi trạng thái máy bơm nếu thay đổi
-        if (pumpState != lastPumpState) {
-            tb.sendAttributeData("getValueButtonPump", pumpState);
-            lastPumpState = pumpState;
+            // Gửi trạng thái máy bơm nếu thay đổi
+            if (pumpState != lastPumpState) {
+                digitalWrite(RELAY_PIN, pumpState);
+                updateDashboardPumpState();
+                lastPumpState = pumpState;
+            }
         }
 
         vTaskDelay(5000 / portTICK_PERIOD_MS);  // Cập nhật sau mỗi 5 giây
     }
 }
 
+// Task 3: Điều khiển bơm theo độ ẩm đất (Ưu tiên cao hơn)
+void TaskSoilMoisturePump(void *pvParameters) {
+    float soilMoisture;
+    for (;;) {
+        if (xQueueReceive(soilMoistureQueue, &soilMoisture, portMAX_DELAY) == pdTRUE) {
+            bool isRaining = 0;
+            bool newPumpState = pumpState;
 
-// Task điều khiển Pump bằng nút nhấn
+            if ((soilMoisture < SOIL_MOISTURE_THRESHOLD_LOW) && !isRaining) {
+                Serial.println("Độ ẩm đất thấp, BẬT máy bơm!");
+                newPumpState = true;
+            } else if ((soilMoisture > SOIL_MOISTURE_THRESHOLD_HIGH) || isRaining) {
+                Serial.println("Độ ẩm đất đạt mức yêu cầu, TẮT máy bơm!");
+                newPumpState = false;
+            }
+
+            // Chỉ bật/tắt máy bơm nếu trạng thái thay đổi
+            if (newPumpState != pumpState) {
+                pumpState = newPumpState;
+                digitalWrite(RELAY_PIN, pumpState);
+                // Gửi trạng thái máy bơm nếu thay đổi
+                updateDashboardPumpState();
+                lastPumpState = pumpState;
+                // Gửi cảnh báo nếu máy bơm được bật
+                checkAndSendAlertsPump(soilMoisture, pumpState);
+            }
+        }
+    }
+}
+
+// Task 4: Điều khiển Pump bằng nút nhấn
 void TaskButtonPumpControl(void *pvParameters) {
     bool lastButtonState = digitalRead(BUTTON_PIN);
 
@@ -109,21 +135,17 @@ void TaskButtonPumpControl(void *pvParameters) {
 
         if (buttonState == LOW && lastButtonState == HIGH) { // Nhấn nút
             vTaskDelay(50 / portTICK_PERIOD_MS); // Debounce
+            
             if (digitalRead(BUTTON_PIN) == LOW) {  // Kiểm tra lại sau debounce
-                if (isAutoMode) {
-                    isAutoMode = false;
-                    Serial.println("Chuyển sang Manual mode");
-                }
-
-                pumpState = !pumpState; // Đảo trạng thái máy bơm
-                digitalWrite(RELAY_PIN, pumpState);
-                Serial.print("Máy bơm: ");
-                Serial.println(pumpState ? "BẬT!" : "TẮT!");
-                tb.sendAttributeData("getValueButtonPump", pumpState);
-
-                // Kiểm tra trước khi gửi dữ liệu lên ThingsBoard
-                if (tb.connected()) {
-                    tb.sendAttributeData("getValueButtonPump", pumpState);
+                // Chỉ cho phép bật/tắt máy bơm khi ở chế độ manual
+                if (!isAutoMode) {  
+                    pumpState = !pumpState;
+                    digitalWrite(RELAY_PIN, pumpState);
+                    Serial.printf("Máy bơm: %s\n", pumpState ? "BẬT!" : "TẮT!");
+                    // Gửi trạng thái máy bơm nếu thay đổi
+                    updateDashboardPumpState();
+                } else {
+                    Serial.println("Chế độ Auto - Không thể bật/tắt thủ công.");
                 }
             }
         }
@@ -133,18 +155,12 @@ void TaskButtonPumpControl(void *pvParameters) {
     }
 }
 
-
-// Task xử lý Button chuyển đổi Auto/Manual mode
+// Task 5: Xử lý Button chuyển đổi Auto/Manual mode
 void TaskModeControl(void *pvParameters) {
-    bool lastState = HIGH; // Trạng thái trước của button mode
-    for (;;) {
-        bool currentState = digitalRead(MODE_BUTTON_PIN);
-        if (currentState == LOW && lastState == HIGH) { // Button mode được nhấn
-            isAutoMode = !isAutoMode; // Chuyển đổi mode
-            Serial.print("Chế độ: ");
-            Serial.println(isAutoMode ? "Auto" : "Manual");
-        }
-        lastState = currentState;
-        vTaskDelay(100 / portTICK_PERIOD_MS); // Tránh lặp lại nhanh
-    }
+    attachInterrupt(digitalPinToInterrupt(MODE_BUTTON_PIN), []() {
+        isAutoMode = !isAutoMode;
+        Serial.printf("Chế độ: %s\n", isAutoMode ? "Auto" : "Manual");
+    }, FALLING);
+
+    vTaskDelete(NULL);  // Không cần vòng lặp, xử lý bằng interrupt
 }

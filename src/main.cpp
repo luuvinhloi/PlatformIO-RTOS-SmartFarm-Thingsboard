@@ -18,22 +18,24 @@ void WiFiTask(void *pvParameters);
 void ThingsBoardTask(void *pvParameters);
 void ReconnectTask(void *pvParameters);
 void SensorTask(void *pvParameters);
+void TaskScheduleLED(void *pvParameters);
 void TaskButtonLEDControl(void *pvParameters);
 void TaskSendLEDState(void *pvParameters);
-void TaskPumpControl(void *pvParameters);
+void TaskRainSensorMonitor(void *pvParameters);
+void TaskSchedulePump(void *pvParameters);
+void TaskSoilMoisturePump(void *pvParameters);
 void TaskButtonPumpControl(void *pvParameters);
 void TaskModeControl(void *pvParameters);
-
 
 // Hàm setup
 void setup() {
   Serial.begin(SERIAL_DEBUG_BAUD);
 
-  pinMode(LED_PIN, OUTPUT);
-  pinMode(LED_BUTTON_PIN, INPUT_PULLUP);
-
   // Khởi tạo Semaphore
   ledSemaphore = xSemaphoreCreateMutex();
+
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(LED_BUTTON_PIN, INPUT_PULLUP);
 
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -49,12 +51,8 @@ void setup() {
     while (1); // Dừng chương trình nếu RTC không hoạt động
   }
 
-  char buffer[20];  // Khai báo biến buffer
-
   if (rtc.lostPower()) {
-    // Serial.println("RTC mất nguồn, đặt lại thời gian!");
-    // rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // Cập nhật theo thời gian biên dịch
-
+    char buffer[20];  // Khai báo biến buffer
     Serial.println("RTC mất nguồn, nhập thời gian thực theo định dạng YYYY MM DD HH MM SS:");
     while (!Serial.available());  // Chờ người dùng nhập thời gian
 
@@ -68,7 +66,6 @@ void setup() {
 
   Serial.println("RTC đã được khởi tạo thành công!");
 
-
   // Khởi tạo LCD
   lcd.init();
   lcd.backlight();  // Bật đèn nền
@@ -77,21 +74,22 @@ void setup() {
   lcd.setCursor(0, 1);
   lcd.print("Starting...");
 
-
   // Khởi tạo các task của FreeRTOS
-  xTaskCreate(WiFiTask, "WiFiTask", 4096, NULL, 1, NULL);
-  xTaskCreate(ThingsBoardTask, "ThingsBoardTask", 4096, NULL, 1, NULL);
-  xTaskCreate(ReconnectTask, "ReconnectTask", 4096, NULL, 1, NULL);
-  xTaskCreate(SensorTask, "SensorTask", 4096, NULL, 1, NULL);
-  xTaskCreate(TaskButtonLEDControl, "TaskButtonLEDControl", 4096, NULL, 1, NULL);
-  xTaskCreate(TaskSendLEDState, "TaskSendLEDState", 2048, NULL, 1, NULL);
-  xTaskCreate(TaskPumpControl, "TaskPumpControl", 4096, NULL, 1, NULL);
-  xTaskCreate(TaskButtonPumpControl, "TaskButtonPumpControl", 4096, NULL, 1, NULL);
-  xTaskCreate(TaskModeControl, "TaskModeControl", 4096, NULL, 1, NULL);
+  xTaskCreate(WiFiTask, "WiFiTask", 8192, nullptr, 1, nullptr);
+  xTaskCreate(ThingsBoardTask, "ThingsBoardTask", 8192, nullptr, 1, nullptr);
+  xTaskCreate(ReconnectTask, "ReconnectTask", 8192, nullptr, 1, nullptr);
+  xTaskCreate(SensorTask, "SensorTask", 4096, nullptr, 1, nullptr);
+  xTaskCreate(TaskScheduleLED, "LED Schedule", 4096, nullptr, 1, nullptr);
+  xTaskCreate(TaskButtonLEDControl, "TaskButtonLEDControl", 4096, nullptr, 1, nullptr);
+  xTaskCreate(TaskSendLEDState, "TaskSendLEDState", 2048, nullptr, 1, nullptr);
+  xTaskCreate(TaskRainSensorMonitor, "Rain Sensor", 1024, nullptr, 1, nullptr);
+  xTaskCreate(TaskSoilMoisturePump, "Soil Moisture Pump", 2048, nullptr, 1, nullptr);
+  xTaskCreate(TaskSchedulePump, "Pump Schedule", 4096, nullptr, 1, nullptr);
+  xTaskCreate(TaskButtonPumpControl, "TaskButtonPumpControl", 4096, nullptr, 1, nullptr);
+  xTaskCreate(TaskModeControl, "TaskModeControl", 4096, nullptr, 1, nullptr);
 }
-
 
 // Hàm loop
 void loop() {
-  vTaskDelete(NULL);
+  vTaskDelete(nullptr);
 }

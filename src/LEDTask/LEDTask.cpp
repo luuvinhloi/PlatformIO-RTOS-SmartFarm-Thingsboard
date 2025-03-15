@@ -1,18 +1,75 @@
+#include "LEDTask.h"
 #include "ConnectTask/ConnectTask.h"
 #include "PumpTask/PumpTask.h"
 #include "SensorTask/SensorTask.h"
 #include "SendMessageTask/SendMessageTask.h"
-#include "LEDTask.h"
-
 
 // Các biến trạng thái
-volatile bool attributesChanged = false;
+volatile bool attributesChangedLED = false;
 volatile bool ledState = false;     // Trạng thái của LED
+static int lastLEDState = 0;   // Biến lưu trạng thái cũ
 bool lastLedButtonState = false;    // Trạng thái trước đó của nút nhấn
 
 // Semaphore bảo vệ biến ledState
 SemaphoreHandle_t ledSemaphore;
 
+// Biến toàn cục
+RTC_DS3231 rtcLED;
+
+// Cập nhật trạng thái LED lên Dashboard
+void updateDashboardLEDState() {
+    if (tb.connected()) {
+        tb.sendAttributeData("getValueButtonLED", ledState);
+        attributesChangedLED = false;  // Reset trạng thái thay đổi
+    }
+}
+
+// Xử lý RPC từ Dashboard để thay đổi LED
+RPC_Response setLedSwitchState(const RPC_Data &data) {
+    bool newLEDState = data;
+    
+    if (ledState != newLEDState) {  // Chỉ thay đổi nếu có sự khác biệt
+        xSemaphoreTake(ledSemaphore, portMAX_DELAY);
+        ledState = newLEDState;
+        digitalWrite(LED_PIN, ledState);
+        xSemaphoreGive(ledSemaphore);
+
+        Serial.printf("Dashboard yêu cầu: %s LED!\n", ledState ? "BẬT" : "TẮT");
+        attributesChangedLED = true;
+    }
+    return RPC_Response("setValueButtonLED", ledState);
+}
+
+// RPC để Dashboard lấy trạng thái LED
+RPC_Response getLedState(const RPC_Data &data) {
+    return RPC_Response("getValueButtonLED", ledState);
+}
+
+// Task 1: Điều khiển LED theo lịch hằng ngày
+void TaskScheduleLED(void *pvParameters) {
+    for (;;) {
+        DateTime now = rtcLED.now();  // Lấy thời gian hiện tại
+
+        if ((now.hour() == 18 && now.minute() == 00) && !ledState) {
+            Serial.printf("Thời gian hiện tại: %02d:%02d\n", now.hour(), now.minute());
+            Serial.println("BẬT LED theo lịch hằng ngày.");
+            ledState = true;
+        } else if ((now.hour() == 6 && now.minute() == 0) && ledState) {
+            Serial.printf("Thời gian hiện tại: %02d:%02d\n", now.hour(), now.minute());
+            Serial.println("TẮT LED theo lịch hằng ngày.");
+            ledState = false;
+        }
+
+        // Gửi trạng thái LED nếu thay đổi
+        if (ledState != lastLEDState) {
+            digitalWrite(LED_PIN, ledState);
+            updateDashboardLEDState();
+            lastLEDState = ledState;
+        }
+
+        vTaskDelay(5000 / portTICK_PERIOD_MS);  // Cập nhật sau mỗi 5 giây
+    }
+}
 
 // Task điều khiển LED bằng nút nhấn
 void TaskButtonLEDControl(void *pvParameters) {
@@ -27,13 +84,8 @@ void TaskButtonLEDControl(void *pvParameters) {
 
                 ledState = !ledState; // Đảo trạng thái LED
                 digitalWrite(LED_PIN, ledState);
-                Serial.print("Đèn LED: ");
-                Serial.println(ledState ? "BẬT!" : "TẮT!");
-
-                // Kiểm tra trước khi gửi dữ liệu lên ThingsBoard
-                if (tb.connected()) {
-                    tb.sendAttributeData("getValueButtonLED", ledState);
-                }
+                Serial.printf("Đèn LED: %s\n", ledState ? "BẬT" : "TẮT");
+                updateDashboardLEDState();
             }
         }
 
@@ -42,23 +94,20 @@ void TaskButtonLEDControl(void *pvParameters) {
     }
 }
 
-// Gửi trạng thái LED lên Dashboard mỗi 5 giây
+// Gửi trạng thái LED lên Dashboard mỗi 3 giây
 void TaskSendLEDState(void *pvParameters) {
+    bool lastSentState = ledState;  // Lưu trạng thái đã gửi
+
     for (;;) {
-        // Chỉ gửi dữ liệu lên Dashboard khi có thay đổi trạng thái LED
-        if (tb.connected()) {
-            xSemaphoreTake(ledSemaphore, portMAX_DELAY);  // Đồng bộ với TaskReadButton
-
-            static bool lastSentState = ledState;  // Lưu trạng thái LED đã gửi trước đó
-            if (lastSentState != ledState) {  // Chỉ gửi khi trạng thái thay đổi
-                tb.sendAttributeData("getValueButtonLED", ledState);  // Gửi trạng thái LED lên Dashboard
-                Serial.println("Cập nhật trạng thái LED lên Dashboard!");
-                lastSentState = ledState;  // Cập nhật trạng thái đã gửi
+        if (attributesChangedLED && tb.connected()) {  
+            xSemaphoreTake(ledSemaphore, portMAX_DELAY);
+            if (lastSentState != ledState) {
+                updateDashboardLEDState();
+                lastSentState = ledState;
             }
-
-            xSemaphoreGive(ledSemaphore);  // Giải phóng Semaphore
+            xSemaphoreGive(ledSemaphore);
+            attributesChangedLED = false;  // Reset trạng thái thay đổi
         }
-
-        vTaskDelay(5000 / portTICK_PERIOD_MS);  // Gửi mỗi 5 giây nếu có thay đổi
+        vTaskDelay(3000 / portTICK_PERIOD_MS);
     }
 }
